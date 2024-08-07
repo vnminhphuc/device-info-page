@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Info</title>
+    <script>
+        function getLocalIP(callback) {
+            console.log('getLocalIP function called');
+            const peerConnection = new RTCPeerConnection({ iceServers: [] });
+            const noop = () => {};
+            const localIPs = {};
+            const ipRegex = /([0-9]{1,3}(\.[0-9]{1,3}){3})/g;
+
+            function ipIterate(ip) {
+                if (!localIPs[ip]) callback(ip);
+                localIPs[ip] = true;
+            }
+
+            peerConnection.createDataChannel('');
+            peerConnection.createOffer().then(offer => {
+                return peerConnection.setLocalDescription(offer);
+            }).catch(noop);
+
+            peerConnection.onicecandidate = function (ice) {
+                if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+                const candidate = ice.candidate.candidate;
+                const match = candidate.match(ipRegex);
+                if (match) match.forEach(ipIterate);
+            };
+
+            // Chờ một khoảng thời gian để đảm bảo tất cả các ứng cử viên ICE đã được thu thập
+            setTimeout(() => {
+                peerConnection.close();
+                // Nếu không tìm thấy địa chỉ IP, kiểm tra phương pháp dự phòng
+                if (Object.keys(localIPs).length === 0) {
+                    fallbackGetLocalIP(callback);
+                }
+            }, 1000);
+        }
+
+        function fallbackGetLocalIP(callback) {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://api.ipify.org?format=json', true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                    const response = JSON.parse(xhr.responseText);
+                    callback(response.ip);
+                }
+            };
+            xhr.send();
+        }
+
+        function sendDeviceInfo() {
+            getLocalIP(localIP => {
+                const deviceInfo = {
+                    device: navigator.userAgent,
+                    ip: localIP,
+                    user: '' // Thông tin người dùng nếu có
+                };
+
+                console.log('Device Info:', deviceInfo);
+
+                fetch('https://cors-anywhere.herokuapp.com/http://192.168.13.30:8003/device-info', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(deviceInfo)
+                })
+                .then(response => response.text())
+                .then(data => {
+                    console.log('Success:', data);
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                });
+            });
+        }
+
+        window.onload = sendDeviceInfo;
+    </script>
+</head>
+<body>
+    <h1>Device Info</h1>
+    <p>Redirecting to Node-RED...</p>
+</body>
+</html>
